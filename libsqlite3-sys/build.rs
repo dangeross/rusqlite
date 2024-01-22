@@ -246,7 +246,10 @@ mod build_bundled {
         if !win_target() {
             cfg.flag("-DHAVE_LOCALTIME_R");
         }
-        if env::var("TARGET").map_or(false, |v| v == "wasm32-wasi") {
+
+        let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS");
+
+        if target_os.starts_with("wasi") {
             cfg.flag("-USQLITE_THREADSAFE")
                 .flag("-DSQLITE_THREADSAFE=0")
                 // https://github.com/rust-lang/rust/issues/74393
@@ -258,6 +261,21 @@ mod build_bundled {
 
             if cfg!(feature = "wasm32-wasi-vfs") {
                 cfg.file("sqlite3/wasm32-wasi-vfs.c");
+            }
+
+            if let Ok(wasi_sdk) = env::var("WASI_SDK") {
+                cfg
+                    .compiler(format!("{wasi_sdk}/bin/clang"));
+                let wasi_sysroot_lib = match env::var("CARGO_CFG_TARGET_FEATURE") {
+                    Ok(target_feature) if target_feature.contains("atomics") => {
+                        cfg
+                            .flag("-matomics")
+                            .flag("-mbulk-memory");
+                        "wasm32-wasi-threads"
+                    }
+                    _ => "wasm32-wasi",
+                };
+                println!("cargo:rustc-link-search={wasi_sdk}/share/wasi-sysroot/lib/{wasi_sysroot_lib}");
             }
         }
         if cfg!(feature = "unlock_notify") {
